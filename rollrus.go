@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"reflect"
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -169,11 +170,19 @@ func (r *Hook) Levels() []logrus.Level {
 // returned by Levels().
 func (r *Hook) Fire(entry *logrus.Entry) error {
 	trace, cause := extractError(entry)
-	if _, ok := r.ignoredErrors[cause]; ok {
+
+	var errToSend error
+	if cause == nil {
+		errToSend = errors.Errorf(entry.Message)
+	} else {
+		errToSend = cause
+	}
+
+	if _, ok := r.ignoredErrors[errToSend]; ok {
 		return nil
 	}
 
-	if r.ignoreErrorFunc(cause) {
+	if r.ignoreErrorFunc(errToSend) {
 		return nil
 	}
 
@@ -182,7 +191,11 @@ func (r *Hook) Fire(entry *logrus.Entry) error {
 		m["time"] = entry.Time.Format(time.RFC3339)
 	}
 
-	return r.report(entry, cause, m, trace)
+	if cause != nil {
+		errToSend = makeError(entry.Message, cause)
+	}
+
+	return r.report(entry, errToSend, m, trace)
 }
 
 func (r *Hook) report(entry *logrus.Entry, cause error, m map[string]string, trace []uintptr) (err error) {
@@ -262,7 +275,7 @@ func extractError(entry *logrus.Entry) ([]uintptr, error) {
 	}
 
 	// when no error found, default to the logged message.
-	return trace, fmt.Errorf(entry.Message)
+	return trace, nil
 }
 
 func copyStackTrace(trace errors.StackTrace) (out []uintptr) {
@@ -270,4 +283,15 @@ func copyStackTrace(trace errors.StackTrace) (out []uintptr) {
 		out = append(out, uintptr(frame))
 	}
 	return
+}
+
+func makeError(msg string, cause error) error {
+	class := reflect.TypeOf(cause).String()
+	if class == "" {
+		return errors.Errorf("%s: panic: %s", msg, cause.Error())
+	} else if class == "*errors.errorString" {
+		return errors.Errorf("%s: %s", msg, cause.Error())
+	} else {
+		return errors.Errorf("%s: %s: %s", msg, class, cause.Error())
+	}
 }

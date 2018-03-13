@@ -132,8 +132,8 @@ func TestExtractErrorDefault(t *testing.T) {
 		t.Fatal("Expected length of trace to be equal to 0, but instead is: ", len(trace))
 	}
 
-	if cause.Error() != "message error" {
-		t.Fatalf("Expected error as string to be 'message error', but was instead: %q", cause)
+	if cause != nil {
+		t.Fatalf("Expected cause to be empty, but was instead: %q", cause)
 	}
 }
 
